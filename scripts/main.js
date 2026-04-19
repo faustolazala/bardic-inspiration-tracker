@@ -6,9 +6,22 @@ const FLAGS = {
   manualDie: "manualDie",
   hasInspiration: "hasBardicInspiration"
 };
+const SETTING_KEY = "worldConfig";
 
 Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initializing`);
+
+  game.settings.register(MODULE_ID, SETTING_KEY, {
+    name: "Bardic Inspiration Tracker Config",
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {
+      bardUuid: null,
+      party: [],
+      dieOverride: ""
+    }
+  });
 });
 
 Hooks.on("getHeaderControlsActorSheetV2", (app, controls) => {
@@ -65,20 +78,11 @@ function rerenderOpenPanels() {
 }
 
 function getWorldConfig() {
-  const cfg = game.world.getFlag(MODULE_ID, FLAGS.world) ?? {};
-  return {
-    partyActorIds: Array.isArray(cfg[FLAGS.party]) ? cfg[FLAGS.party] : [],
-    bardActorId: cfg[FLAGS.bard] ?? "",
-    manualDie: cfg[FLAGS.manualDie] ?? ""
-  };
+  return game.settings.get(MODULE_ID, SETTING_KEY);
 }
 
-async function setWorldConfig(data) {
-  return game.world.setFlag(MODULE_ID, FLAGS.world, {
-    [FLAGS.party]: data.partyActorIds,
-    [FLAGS.bard]: data.bardActorId,
-    [FLAGS.manualDie]: data.manualDie
-  });
+async function setWorldConfig(value) {
+  return game.settings.set(MODULE_ID, SETTING_KEY, value);
 }
 
 function getPartyActors() {
