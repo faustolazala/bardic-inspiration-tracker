@@ -271,6 +271,7 @@ function normalizeDie(value) {
 function openConfigDialog(contextActor) {
   const actors = game.actors.filter(a => a.type === "character").sort((a, b) => a.name.localeCompare(b.name));
   const cfg = getWorldConfig();
+  const selectedParty = Array.isArray(cfg.partyActorIds) ? cfg.partyActorIds : [];
 
   const content = `
     <form class="bit-config-dialog">
