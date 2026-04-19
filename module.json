@@ -1,11 +1,12 @@
 {
   "id": "bardic-inspiration-tracker",
+  "type": "module",
   "title": "Bardic Inspiration Tracker",
   "description": "Attach a compact bardic inspiration tracker to actor sheets for D&D 5e parties.",
   "version": "1.0.0",
   "authors": [
     {
-      "name": "OpenAI"
+      "name": "faustolazala"
     }
   ],
   "compatibility": {
@@ -16,7 +17,12 @@
     "systems": [
       {
         "id": "dnd5e",
-        "type": "system"
+        "type": "system",
+        "compatibility": {
+          "minimum": "5.1.8",
+          "verified": "5.1.8",
+          "maximum": "5.1.8"
+        }
       }
     ]
   },
