@@ -1,0 +1,37 @@
+{
+  "id": "bardic-inspiration-tracker",
+  "title": "Bardic Inspiration Tracker",
+  "description": "Attach a compact bardic inspiration tracker to actor sheets for D&D 5e parties.",
+  "version": "1.0.0",
+  "authors": [
+    {
+      "name": "OpenAI"
+    }
+  ],
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13"
+  },
+  "relationships": {
+    "systems": [
+      {
+        "id": "dnd5e",
+        "type": "system"
+      }
+    ]
+  },
+  "esmodules": [
+    "scripts/main.js"
+  ],
+  "styles": [
+    "styles/main.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    }
+  ],
+  "url": "https://foundryvtt.com/article/module-development/"
+}

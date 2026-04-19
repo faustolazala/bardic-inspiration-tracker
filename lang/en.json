@@ -1,0 +1,22 @@
+{
+  "BIT.Title": "Bardic Inspiration",
+  "BIT.Configure": "Configure Bardic Inspiration",
+  "BIT.Bard": "Bard",
+  "BIT.PartyMembers": "Party Members",
+  "BIT.ManualDie": "Manual die override",
+  "BIT.ManualDieHint": "Optional. Example: d8. If blank, the module tries to infer the die from the bard.",
+  "BIT.Save": "Save",
+  "BIT.NoParty": "No party members configured.",
+  "BIT.HasInspiration": "Has bardic inspiration",
+  "BIT.NoInspiration": "No bardic inspiration",
+  "BIT.Roll": "Roll Bardic Inspiration",
+  "BIT.Grant": "Grant Bardic Inspiration",
+  "BIT.Remove": "Remove Bardic Inspiration",
+  "BIT.ConfigButton": "Bardic Inspiration Setup",
+  "BIT.RollFlavor": "Bardic Inspiration",
+  "BIT.RollUnknown": "No bardic inspiration die could be determined. Configure a manual die override or select a bard.",
+  "BIT.BardNotSet": "No bard configured",
+  "BIT.FromBard": "Bard: {name}",
+  "BIT.Die": "Die: {die}",
+  "BIT.TrackerButton": "Bardic Inspiration"
+}
