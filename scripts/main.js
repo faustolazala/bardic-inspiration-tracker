@@ -11,16 +11,17 @@ Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initializing`);
 });
 
-Hooks.on("getActorSheetHeaderButtons", (app, buttons) => {
+Hooks.on("getHeaderControlsActorSheetV2", (app, controls) => {
   if (!game.user.isGM) return;
+
   const actor = app.actor ?? app.document;
   if (!actor || actor.type !== "character") return;
 
-  buttons.unshift({
+  controls.unshift({
+    action: "bit-config",
     label: game.i18n.localize("BIT.TrackerButton"),
-    class: "bit-open-config",
     icon: "fas fa-music",
-    onclick: () => openConfigDialog(actor)
+    onClick: () => openConfigDialog(actor)
   });
 });
 
