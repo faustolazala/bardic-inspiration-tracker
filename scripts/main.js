@@ -17,9 +17,9 @@ Hooks.once("init", () => {
     config: false,
     type: Object,
     default: {
-      bardUuid: null,
-      party: [],
-      dieOverride: ""
+      bardActorId: "",
+      partyActorIds: [],
+      manualDie: ""
     }
   });
 });
@@ -78,15 +78,25 @@ function rerenderOpenPanels() {
 }
 
 function getWorldConfig() {
-  return game.settings.get(MODULE_ID, SETTING_KEY);
+  const cfg = game.settings.get(MODULE_ID, SETTING_KEY) ?? {};
+  return {
+    bardActorId: typeof cfg.bardActorId === "string" ? cfg.bardActorId : "",
+    partyActorIds: Array.isArray(cfg.partyActorIds) ? cfg.partyActorIds : [],
+    manualDie: typeof cfg.manualDie === "string" ? cfg.manualDie : ""
+  };
 }
 
-async function setWorldConfig(value) {
-  return game.settings.set(MODULE_ID, SETTING_KEY, value);
+async function setWorldConfig(data) {
+  return game.settings.set(MODULE_ID, SETTING_KEY, {
+    bardActorId: typeof data.bardActorId === "string" ? data.bardActorId : "",
+    partyActorIds: Array.isArray(data.partyActorIds) ? data.partyActorIds : [],
+    manualDie: typeof data.manualDie === "string" ? data.manualDie : ""
+  });
 }
 
 function getPartyActors() {
   const cfg = getWorldConfig();
+  const selectedParty = Array.isArray(cfg.partyActorIds) ? cfg.partyActorIds : [];
   return cfg.partyActorIds.map(id => game.actors.get(id)).filter(Boolean);
 }
 
@@ -281,7 +291,7 @@ function openConfigDialog(contextActor) {
         <div class="bit-checkbox-list">
           ${actors.map(actor => `
             <label>
-              <input type="checkbox" name="partyActorIds" value="${actor.id}" ${cfg.partyActorIds.includes(actor.id) ? "checked" : ""}>
+              <input type="checkbox" name="partyActorIds" value="${actor.id}" ${selectedParty.includes(actor.id) ? "checked" : ""}>
               ${actor.name}
             </label>
           `).join("")}
