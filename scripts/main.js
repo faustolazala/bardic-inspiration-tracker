@@ -1,326 +1,357 @@
 const MODULE_ID = "bardic-inspiration-tracker";
-const FLAGS = {
-  world: "world",
-  party: "partyActorIds",
-  bard: "bardActorId",
-  manualDie: "manualDie",
-  hasInspiration: "hasBardicInspiration"
-};
-const SETTING_KEY = "worldConfig";
+
+// ============================================================
+// HOOKS
+// ============================================================
 
 Hooks.once("init", () => {
-  console.log(`${MODULE_ID} | Initializing`);
-
-  game.settings.register(MODULE_ID, SETTING_KEY, {
-    name: "Bardic Inspiration Tracker Config",
-    scope: "world",
-    config: false,
-    type: Object,
-    default: {
-      bardActorId: "",
-      partyActorIds: [],
-      manualDie: ""
-    }
-  });
-});
-
-Hooks.on("getHeaderControlsActorSheetV2", (app, controls) => {
-  if (!game.user.isGM) return;
-
-  const actor = app.actor ?? app.document;
-  if (!actor || actor.type !== "character") return;
-
-  controls.unshift({
-    action: "bit-config",
-    label: game.i18n.localize("BIT.TrackerButton"),
-    icon: "fas fa-music",
-    onClick: () => openConfigDialog(actor)
-  });
-});
-
-Hooks.on("renderActorSheet", (app, html) => {
-  const actor = app.actor ?? app.document;
-  if (!actor || actor.type !== "character") return;
-
-  const root = html instanceof jQuery ? html[0] : html;
-  if (!root) return;
-
-  const sheetBody = root.querySelector(".window-content") ?? root;
-  const existing = root.querySelector(`.bit-sheet-panel[data-appid=\"${app.appId}\"]`);
-  if (existing) existing.remove();
-
-  root.style.position = root.style.position || "relative";
-
-  const panel = buildTrackerPanel(actor, app.appId);
-  sheetBody.appendChild(panel);
-  bindPanelEvents(panel, actor);
-});
-
-Hooks.on("closeActorSheet", (app) => {
-  const el = document.querySelector(`.bit-sheet-panel[data-appid=\"${app.appId}\"]`);
-  el?.remove();
-});
-
-Hooks.on("updateActor", (actor) => {
-  rerenderOpenPanels();
-});
-
-Hooks.on("controlToken", () => {
-  rerenderOpenPanels();
-});
-
-function rerenderOpenPanels() {
-  for (const app of Object.values(ui.windows)) {
-    const actor = app?.actor ?? app?.document;
-    if (!actor || app?.constructor?.name?.includes("Actor") === false) continue;
-    if (typeof app.render === "function") app.render(false);
-  }
-}
-
-function getWorldConfig() {
-  const cfg = game.settings.get(MODULE_ID, SETTING_KEY) ?? {};
-  return {
-    bardActorId: typeof cfg.bardActorId === "string" ? cfg.bardActorId : "",
-    partyActorIds: Array.isArray(cfg.partyActorIds) ? cfg.partyActorIds : [],
-    manualDie: typeof cfg.manualDie === "string" ? cfg.manualDie : ""
-  };
-}
-
-async function setWorldConfig(data) {
-  return game.settings.set(MODULE_ID, SETTING_KEY, {
-    bardActorId: typeof data.bardActorId === "string" ? data.bardActorId : "",
-    partyActorIds: Array.isArray(data.partyActorIds) ? data.partyActorIds : [],
-    manualDie: typeof data.manualDie === "string" ? data.manualDie : ""
-  });
-}
-
-function getPartyActors() {
-  const cfg = getWorldConfig();
-  const selectedParty = Array.isArray(cfg.partyActorIds) ? cfg.partyActorIds : [];
-  return cfg.partyActorIds.map(id => game.actors.get(id)).filter(Boolean);
-}
-
-function getBardActor() {
-  const cfg = getWorldConfig();
-  return game.actors.get(cfg.bardActorId) ?? null;
-}
-
-function userCanConsumeInspiration(actor) {
-  return game.user.isGM || actor.isOwner;
-}
-
-function userCanGrantInspiration(actor) {
-  return game.user.isGM || getBardActor()?.isOwner;
-}
-
-function actorHasInspiration(actor) {
-  return Boolean(actor.getFlag(MODULE_ID, FLAGS.hasInspiration));
-}
-
-async function setActorInspiration(actor, value) {
-  return actor.setFlag(MODULE_ID, FLAGS.hasInspiration, Boolean(value));
-}
-
-function buildTrackerPanel(sheetActor, appId) {
-  const cfg = getWorldConfig();
-  const bardActor = getBardActor();
-  const die = resolveBardicDie();
-  const party = getPartyActors();
-
-  const wrapper = document.createElement("section");
-  wrapper.classList.add("bit-sheet-panel");
-  wrapper.dataset.appid = String(appId);
-
-  const bardLabel = bardActor
-    ? game.i18n.format("BIT.FromBard", { name: bardActor.name })
-    : game.i18n.localize("BIT.BardNotSet");
-  const dieLabel = die ? game.i18n.format("BIT.Die", { die }) : game.i18n.localize("BIT.RollUnknown");
-
-  wrapper.innerHTML = `
-    <div class="bit-header">
-      <div class="bit-title">${game.i18n.localize("BIT.Title")}</div>
-      ${game.user.isGM ? `<button type="button" class="bit-config" title="${game.i18n.localize("BIT.Configure")}"><i class="fas fa-cog"></i></button>` : ""}
-    </div>
-    <div class="bit-meta">
-      <div>${bardLabel}</div>
-      <div>${dieLabel}</div>
-    </div>
-    <div class="bit-party">
-      ${party.length ? party.map(actor => renderPartyMember(actor)).join("") : `<div class="bit-empty">${game.i18n.localize("BIT.NoParty")}</div>`}
-    </div>
-  `;
-
-  return wrapper;
-}
-
-function renderPartyMember(actor) {
-  const hasIt = actorHasInspiration(actor);
-  const title = hasIt ? game.i18n.localize("BIT.Roll") : game.i18n.localize("BIT.NoInspiration");
-  return `
-    <div class="bit-member" data-actor-id="${actor.id}">
-      <img src="${actor.img}" alt="${actor.name}">
-      <div class="bit-member-name">${actor.name}</div>
-      <button type="button" class="bit-inspiration-toggle ${hasIt ? "has-inspiration" : ""}" title="${title}">
-        <i class="fas fa-music"></i>
-      </button>
-    </div>
-  `;
-}
-
-function bindPanelEvents(panel, sheetActor) {
-  panel.querySelector(".bit-config")?.addEventListener("click", () => openConfigDialog(sheetActor));
-
-  for (const button of panel.querySelectorAll(".bit-inspiration-toggle")) {
-    button.addEventListener("click", async (event) => {
-      const actorId = event.currentTarget.closest(".bit-member")?.dataset.actorId;
-      const actor = game.actors.get(actorId);
-      if (!actor) return;
-
-      const hasIt = actorHasInspiration(actor);
-
-      if (hasIt) {
-        if (!userCanConsumeInspiration(actor)) return;
-        await rollAndConsumeInspiration(actor);
-      } else {
-        if (!userCanGrantInspiration(actor)) return;
-        await setActorInspiration(actor, true);
-        ui.notifications.info(`${actor.name} gains Bardic Inspiration.`);
-      }
+    game.settings.register(MODULE_ID, "partyMethod", {
+        name: "Party Detection Method",
+        hint: "How to determine which characters belong to the same party.",
+        scope: "world",
+        config: true,
+        type: String,
+        choices: {
+            folder: "Same Folder",
+            scene: "Active Scene Tokens",
+        },
+        default: "folder",
     });
-  }
-}
 
-async function rollAndConsumeInspiration(actor) {
-  const die = resolveBardicDie();
-  if (!die) {
-    ui.notifications.warn(game.i18n.localize("BIT.RollUnknown"));
-    return;
-  }
+    console.log(`${MODULE_ID} | Initialized`);
+});
 
-  const roll = await (new Roll(`1${die}`)).evaluate();
-  await roll.toMessage({
-    speaker: ChatMessage.getSpeaker({ actor }),
-    flavor: `${game.i18n.localize("BIT.RollFlavor")}: ${actor.name}`
-  });
-  await setActorInspiration(actor, false);
-}
+Hooks.on("renderActorSheetV2", (app, html) => {
+    const actor = app.actor ?? app.document;
+    if (!actor || actor.type !== "character") return;
 
-function resolveBardicDie() {
-  const cfg = getWorldConfig();
-  const manual = normalizeDie(cfg.manualDie);
-  if (manual) return manual;
+    const root = html instanceof jQuery ? html[0] : html;
+    if (!root) return;
 
-  const bard = getBardActor();
-  if (!bard) return null;
+    const sheetBody = root.querySelector(".window-content") ?? root;
 
-  const candidateValues = [
-    bard?.system?.attributes?.bardicInspiration,
-    bard?.system?.scale?.bard?.bardicInspiration,
-    bard?.system?.scale?.bard?.inspiration,
-    bard?.system?.details?.bardicInspiration
-  ];
+    // TRACK BAR
+    const trackBar = buildTrackBar(actor);
+    const sheetHeader = sheetBody.querySelector(".sheet-header") ?? sheetBody;
+    const sheetLeftDiv = sheetHeader.querySelector(".left") ?? sheetHeader;
+    sheetLeftDiv.prepend(trackBar);
 
-  for (const item of bard.items ?? []) {
-    candidateValues.push(
-      item?.system?.scale?.bard?.bardicInspiration,
-      item?.system?.scale?.bard?.inspiration,
-      item?.system?.bardicInspiration
-    );
-  }
+    // PARTY PANEL — bards only
+    const isBard = actor.items.some(i => i.type === "class" && i.name.toLowerCase() === "bard");
+    if (isBard) {
+        const partyPanel = buildPartyPanel(actor);
+        const rightDetailsTab =
+            sheetBody.querySelector('section.tab[data-tab="details"][data-group="primary"] > .right')
+            ?? sheetBody;
+        rightDetailsTab.append(partyPanel);
+    }
+});
 
-  for (const value of candidateValues) {
-    const normalized = normalizeDie(value);
-    if (normalized) return normalized;
-  }
+Hooks.on("createActor", (actor) => {
+    if (actor.type !== "character") return;
+    refreshOpenPartySheets(actor);
+});
 
-  const bardLevel = inferBardLevel(bard);
-  if (!bardLevel) return null;
-  if (bardLevel >= 15) return "d12";
-  if (bardLevel >= 10) return "d10";
-  if (bardLevel >= 5) return "d8";
-  return "d6";
-}
+Hooks.on("updateActor", (actor, changed) => {
+    if (actor.type !== "character") return;
+    // If the actor moved folders, every open party sheet could be affected
+    if (Object.hasOwn(changed, "folder")) {
+        refreshAllOpenCharacterSheets();
+        return;
+    }
+    refreshOpenPartySheets(actor);
+});
 
-function inferBardLevel(actor) {
-  const direct = Number(actor?.system?.classes?.bard?.levels);
-  if (Number.isFinite(direct) && direct > 0) return direct;
+Hooks.on("deleteActor", (actor) => {
+    if (actor.type !== "character") return;
+    refreshOpenPartySheets(actor);
+});
 
-  const bardClass = (actor.items ?? []).find(i => {
-    const type = String(i.type ?? "").toLowerCase();
-    const name = String(i.name ?? "").toLowerCase();
-    return type === "class" && name === "bard";
-  });
+Hooks.on("dnd5e.shortRest", (actor, data) => {
+    consumeInspiration(actor);
+});
 
-  const fromItem = Number(bardClass?.system?.levels ?? bardClass?.system?.level ?? bardClass?.system?.advancement?.level);
-  if (Number.isFinite(fromItem) && fromItem > 0) return fromItem;
+Hooks.on("dnd5e.longRest", (actor, data) => {
+    consumeInspiration(actor);
+});
 
-  const actorLevel = Number(actor?.system?.details?.level ?? actor?.system?.attributes?.level);
-  if (Number.isFinite(actorLevel) && actorLevel > 0) return actorLevel;
+// ============================================================
+// UI — TRACK BAR
+// ============================================================
 
-  return null;
-}
+function buildTrackBar(sheetActor) {
+    const inspired = isInspired(sheetActor);
+    const trackBar = document.createElement("div");
+    trackBar.classList.add("track-bar");
+    trackBar.innerHTML = `
+        <button
+            type="button"
+            class="bardic-inspiration${inspired ? "" : " hidden"}"
+            data-tooltip="Inspired! Click to roll.">
+            <i class="fas fa-music"></i>
+        </button>
+    `;
 
-function normalizeDie(value) {
-  if (value == null) return null;
-  if (typeof value === "number" && Number.isFinite(value)) return `d${value}`;
-  const text = String(value).trim().toLowerCase();
-  const match = text.match(/d?(4|6|8|10|12)/i);
-  return match ? `d${match[1]}` : null;
-}
+    trackBar.querySelector(".bardic-inspiration").addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
 
-function openConfigDialog(contextActor) {
-  const actors = game.actors.filter(a => a.type === "character").sort((a, b) => a.name.localeCompare(b.name));
-  const cfg = getWorldConfig();
-  const selectedParty = Array.isArray(cfg.partyActorIds) ? cfg.partyActorIds : [];
+        if (!isInspired(sheetActor)) return;
 
-  const content = `
-    <form class="bit-config-dialog">
-      <div class="bit-dialog-field">
-        <label>${game.i18n.localize("BIT.Bard")}</label>
-        <select name="bardActorId">
-          <option value="">—</option>
-          ${actors.map(actor => `<option value="${actor.id}" ${cfg.bardActorId === actor.id ? "selected" : ""}>${actor.name}</option>`).join("")}
-        </select>
-      </div>
-      <div class="bit-dialog-field">
-        <label>${game.i18n.localize("BIT.ManualDie")}</label>
-        <input type="text" name="manualDie" value="${cfg.manualDie ?? ""}" placeholder="d6">
-        <div class="hint">${game.i18n.localize("BIT.ManualDieHint")}</div>
-      </div>
-      <div class="bit-dialog-field">
-        <label>${game.i18n.localize("BIT.PartyMembers")}</label>
-        <div class="bit-checkbox-list">
-          ${actors.map(actor => `
-            <label>
-              <input type="checkbox" name="partyActorIds" value="${actor.id}" ${selectedParty.includes(actor.id) ? "checked" : ""}>
-              ${actor.name}
-            </label>
-          `).join("")}
-        </div>
-      </div>
-    </form>
-  `;
+        try {
+            const formula = getInspirationDie(sheetActor);
+            const roll = new Roll(formula);
+            await roll.evaluate();
 
-  const dialog = new foundry.applications.api.DialogV2({
-    window: { title: game.i18n.localize("BIT.Configure") },
-    content,
-    buttons: [
-      {
-        action: "save",
-        label: game.i18n.localize("BIT.Save"),
-        default: true,
-        callback: async (event, button, dialogInstance) => {
-          const form = dialogInstance.element.querySelector("form");
-          const fd = new FormData(form);
-          const bardActorId = String(fd.get("bardActorId") ?? "");
-          const manualDie = String(fd.get("manualDie") ?? "").trim();
-          const partyActorIds = Array.from(form.querySelectorAll("input[name='partyActorIds']:checked")).map(i => i.value);
-          await setWorldConfig({ bardActorId, manualDie, partyActorIds });
-          rerenderOpenPanels();
+            await roll.toMessage({
+                speaker: ChatMessage.getSpeaker({ actor: sheetActor }),
+                flavor: `${sheetActor.name} uses their Bardic Inspiration (${formula})`,
+            });
+
+            await consumeInspiration(sheetActor);
+            refreshOpenPartySheets(sheetActor);
+        } catch (err) {
+            console.error(`${MODULE_ID} | Bardic Inspiration roll failed`, err);
+            ui.notifications.error("Failed to roll Bardic Inspiration.");
         }
-      }
-    ]
-  });
+    });
 
-  dialog.render(true);
+    return trackBar;
+}
+
+// ============================================================
+// UI — PARTY PANEL
+// ============================================================
+
+function buildPartyPanel(sheetActor) {
+    const partyPanel = document.createElement("div");
+    partyPanel.classList.add("party-panel");
+
+    const partyMembers = getPartyMembers(sheetActor);
+    if (!partyMembers.length) return partyPanel;
+
+    const listItems = partyMembers.map(member => {
+        const inspired = isInspired(member);
+        return `
+            <li data-actor-id="${member.id}" data-key="${member.name}" title="${inspired ? "Already inspired" : "Click to inspire"}">
+                <i class="fas fa-fw${inspired ? " fa-music" : ""}"></i>
+                <a class="skill-name">${member.name}</a>
+            </li>
+        `;
+    }).join("");
+
+    partyPanel.innerHTML = `
+        <filigree-box class="skills">
+            <h3>
+                <i class="fas fa-fw fa-music" inert></i>
+                <span class="roboto-upper">Party</span>
+            </h3>
+            <ul>${listItems}</ul>
+        </filigree-box>
+    `;
+
+    partyPanel.addEventListener("click", async (event) => {
+        const li = event.target.closest("li[data-actor-id]");
+        if (!li) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const targetActor = game.actors.get(li.dataset.actorId);
+        if (!targetActor) return;
+
+        await grantBardicInspiration(sheetActor, targetActor);
+        refreshOpenPartySheets(sheetActor);
+    });
+
+    return partyPanel;
+}
+
+// ============================================================
+// INSPIRATION STATE  (flags, not ActiveEffects)
+// ============================================================
+
+function isInspired(actor) {
+    return actor.getFlag(MODULE_ID, "inspired") === true;
+}
+
+function getInspirationSource(actor) {
+    return {
+        id: actor.getFlag(MODULE_ID, "sourceActorId") ?? null,
+        name: actor.getFlag(MODULE_ID, "sourceActorName") ?? null,
+    };
+}
+
+async function giveInspiration(actor, sourceActor, bardicDieFormula) {
+    await actor.setFlag(MODULE_ID, "inspired", true);
+    await actor.setFlag(MODULE_ID, "sourceActorId", sourceActor.id);
+    await actor.setFlag(MODULE_ID, "sourceActorName", sourceActor.name);
+    await actor.setFlag(MODULE_ID, "inspirationDie", bardicDieFormula);
+}
+
+async function consumeInspiration(actor) {
+    await actor.setFlag(MODULE_ID, "inspired", false);
+    await actor.unsetFlag(MODULE_ID, "sourceActorId");
+    await actor.unsetFlag(MODULE_ID, "sourceActorName");
+    await actor.unsetFlag(MODULE_ID, "inspirationDie");
+}
+
+// ============================================================
+// BARDIC INSPIRATION LOGIC
+// ============================================================
+
+async function grantBardicInspiration(bardActor, targetActor) {
+    if (isInspired(targetActor)) {
+        ui.notifications.warn(`${targetActor.name} already has Bardic Inspiration.`);
+        return;
+    }
+
+    // Consume a charge before doing anything else - abort if none left
+    const charged = await consumeBardicInspirationCharge(bardActor);
+    if (!charged) return;
+
+    const formula = getBardicDie(bardActor);
+    await giveInspiration(targetActor, bardActor, formula);
+
+    const roll = new Roll(formula);
+    await roll.evaluate();
+
+    await roll.toMessage({
+        speaker: ChatMessage.getSpeaker({ actor: bardActor }),
+        flavor: `
+            <div class="bardic-inspiration-chat" style="text-align: center; padding: 0.25rem 0;">
+                <div style="font-size: 1.1rem; font-weight: bold; margin-bottom: 0.35rem;">
+                    <i class="fas fa-music"></i>
+                    <span style="margin: 0 0.4rem;">Bardic Inspiration</span>
+                    <i class="fas fa-music"></i>
+                </div>
+                <div style="margin-bottom: 0.25rem;">
+                    <strong>${bardActor.name}</strong> inspires <strong>${targetActor.name}</strong>
+                </div>
+                <div style="font-style: italic;">
+                    Inspiration Die: <strong>${formula}</strong>
+                </div>
+            </div>
+        `,
+    });
+}
+
+/**
+ * Returns the actor's Bardic Inspiration die formula from dnd5e scale data.
+ * Falls back to 1d6 and warns if the scale value cannot be found.
+ */
+function getBardicDie(actor) {
+    const die = actor.getRollData?.()?.scale?.bard?.inspiration;
+    if (!die) {
+        console.warn(`${MODULE_ID} | Could not find Bardic Inspiration die for ${actor.name}. Defaulting to d6.`);
+        ui.notifications.warn(`Could not determine Bardic Inspiration die for ${actor.name}. Using d6.`);
+        return "1d6";
+    }
+    return `1${die}`;
+}
+
+/**
+ * Alias used when a character is consuming their own stored inspiration die,
+ * where the die size was rolled at grant time and stored separately.
+ */
+function getInspirationDie(actor) {
+    // The die was shown in chat at grant time; when consuming we re-roll the
+    // same die. Source bard data is no longer needed — just roll a d6 default
+    // or any stored formula.
+    return actor.getFlag(MODULE_ID, "inspirationDie") ?? null;
+
+    //return getBardicDie(actor);
+}
+
+async function consumeBardicInspirationCharge(bardActor) {
+    const feature = bardActor.items.find(
+        i => i.type === "feat" && i.name.toLowerCase() === "bardic inspiration"
+    );
+
+    if (!feature) {
+        console.warn(`${MODULE_ID} | Bardic Inspiration feat not found on ${bardActor.name}.`);
+        ui.notifications.warn(`Could not find the Bardic Inspiration feature on ${bardActor.name}.`);
+        return false;
+    }
+
+    const uses = feature.system?.uses;
+    if (!uses || uses.max === 0) {
+        // Feature exist but has no uses tracking - let it through silently
+        return true;
+    }
+
+    if (uses.value <= 0) {
+        ui.notifications.warn(`${bardActor.name} has no Bardic Inspiration charges remaining.`);
+        return false;
+    }
+
+    await feature.update({ "system.uses.spent": uses.spent + 1 });
+    console.log(`${MODULE_ID} | Bardic Uses Left: ${feature.system?.uses.value}`);
+    return true;
+}
+
+// ============================================================
+// PARTY DETECTION
+// ============================================================
+
+/**
+ * Returns party members for the given actor, excluding the actor themselves.
+ * Strategy is controlled by the "partyMethod" world setting.
+ */
+function getPartyMembers(actor) {
+    const method = game.settings.get(MODULE_ID, "partyMethod");
+
+    if (method === "scene") {
+        const scene = game.scenes?.active;
+        if (!scene) return [];
+        return scene.tokens
+            .filter(t => t.actor && t.actor.type === "character" && t.actor.id !== actor.id)
+            .map(t => t.actor);
+    }
+
+    // Default: folder
+    const folder = actor.folder;
+    if (!folder) return [];
+    return folder.contents.filter(a => a.type === "character" && a.id !== actor.id);
+}
+
+// ============================================================
+// SHEET REFRESH HELPERS
+// ============================================================
+
+/**
+ * Re-renders all open sheets for characters in the same party as changedActor.
+ */
+function refreshOpenPartySheets(changedActor) {
+    console.log(`${MODULE_ID} | Refreshing party sheets for: ${changedActor.name}`);
+
+    const method = game.settings.get(MODULE_ID, "partyMethod");
+    let partyMembers;
+
+    if (method === "scene") {
+        partyMembers = getPartyMembers(changedActor);
+    } else {
+        const folderId = changedActor?.folder?.id;
+        if (!folderId) return;
+        partyMembers = game.actors.filter(
+            a => a.type === "character" && a.folder?.id === folderId
+        );
+    }
+
+    for (const actor of partyMembers) {
+        for (const app of Object.values(actor.apps ?? {})) {
+            app.render(false);
+        }
+    }
+}
+
+/**
+ * Re-renders all open character sheets. Used when folder membership changes.
+ */
+function refreshAllOpenCharacterSheets() {
+    for (const actor of game.actors.filter(a => a.type === "character")) {
+        for (const app of Object.values(actor.apps ?? {})) {
+            app.render(false);
+        }
+    }
 }
