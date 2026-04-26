@@ -18,6 +18,8 @@ Hooks.once("init", () => {
         default: "folder",
     });
 
+    game.socket.on(`module.${MODULE_ID}`, handleSocketEvent);
+
     console.log(`${MODULE_ID} | Initialized`);
 });
 
@@ -211,7 +213,20 @@ async function grantBardicInspiration(bardActor, targetActor) {
     if (!charged) return;
 
     const formula = getBardicDie(bardActor);
-    await giveInspiration(targetActor, bardActor, formula);
+
+    // If the player doesn't own the target, ask the GM to set the flag
+    if (!targetActor.isOwner) {
+        game.socket.emit(`module.${MODULE_ID}`, {
+            action: "giveInspiration",
+            payload: {
+                targetActorId: targetActor.id,
+                sourceActorId: bardActor.id,
+            }
+        });
+    } else {
+        await giveInspiration(targetActor, bardActor, formula);
+    }
+    
 
     const roll = new Roll(formula);
     await roll.evaluate();
@@ -353,5 +368,22 @@ function refreshAllOpenCharacterSheets() {
         for (const app of Object.values(actor.apps ?? {})) {
             app.render(false);
         }
+    }
+}
+
+// ============================================================
+// SOCKET
+// ============================================================
+
+async function handleSocketEvent({action, payload}) {
+    // Only the GM executes actor updates on behalf of players
+    if (!game.user.isGM) return;
+
+    if (action === "giveInspiration") {
+        const targetActor = game.actors.get(payload.targetActorId);
+        const sourceActor = game.actors.get(payload.sourceActorId);
+        if (!targetActor || !sourceActor) return;
+        await giveInspiration(targetActor, sourceActor);
+        refreshOpenPartySheets(targetActor);
     }
 }
