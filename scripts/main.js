@@ -1,4 +1,5 @@
 const MODULE_ID = "bardic-inspiration-tracker";
+let socket;
 
 // ============================================================
 // HOOKS
@@ -17,10 +18,14 @@ Hooks.once("init", () => {
         },
         default: "folder",
     });
-
-    game.socket.on(`module.${MODULE_ID}`, handleSocketEvent);
-
     console.log(`${MODULE_ID} | Initialized`);
+});
+
+Hooks.once("socketlib.ready", () => {
+    console.log(`${MODULE_ID} | Registering socket listener`);
+    socket = socketlib.registerModule(MODULE_ID);
+    socket.register("giveInspiration", handleGiveInspiration);
+    console.log(`${MODULE_ID} | Socket registered via socketlib`);
 });
 
 Hooks.on("renderActorSheetV2", (app, html) => {
@@ -177,13 +182,6 @@ function isInspired(actor) {
     return actor.getFlag(MODULE_ID, "inspired") === true;
 }
 
-function getInspirationSource(actor) {
-    return {
-        id: actor.getFlag(MODULE_ID, "sourceActorId") ?? null,
-        name: actor.getFlag(MODULE_ID, "sourceActorName") ?? null,
-    };
-}
-
 async function giveInspiration(actor, sourceActor, bardicDieFormula) {
     await actor.setFlag(MODULE_ID, "inspired", true);
     await actor.setFlag(MODULE_ID, "sourceActorId", sourceActor.id);
@@ -208,26 +206,30 @@ async function grantBardicInspiration(bardActor, targetActor) {
         return;
     }
 
-    // Consume a charge before doing anything else - abort if none left
-    const charged = await consumeBardicInspirationCharge(bardActor);
-    if (!charged) return;
+    const gmActive = game.users.some(u => u.isGM && u.active);
+    if (!gmActive) {
+        ui.notifications.warn("A GM must be connected to grant Bardic Inspiration to other players.");
+        return;
+    }
 
     const formula = getBardicDie(bardActor);
 
-    // If the player doesn't own the target, ask the GM to set the flag
-    if (!targetActor.isOwner) {
-        game.socket.emit(`module.${MODULE_ID}`, {
-            action: "giveInspiration",
-            payload: {
-                targetActorId: targetActor.id,
-                sourceActorId: bardActor.id,
-            }
+    const charged = await consumeBardicInspirationCharge(bardActor);
+    if (!charged) return;
+
+    try {
+        await socket.executeAsGM("giveInspiration", {
+            targetActorId: targetActor.id,
+            sourceActorId: bardActor.id,
+            formula,
         });
-    } else {
-        await giveInspiration(targetActor, bardActor, formula);
+    } catch (err) {
+        console.error(`${MODULE_ID} | GM execution failed, refunding charge.`, err);
+        await refundBardicInspirationCharge(bardActor);
+        ui.notifications.error("Failed to grant Bardic Inspiration — charge refunded.");
+        return;
     }
     
-
     const roll = new Roll(formula);
     await roll.evaluate();
 
@@ -273,9 +275,7 @@ function getInspirationDie(actor) {
     // The die was shown in chat at grant time; when consuming we re-roll the
     // same die. Source bard data is no longer needed — just roll a d6 default
     // or any stored formula.
-    return actor.getFlag(MODULE_ID, "inspirationDie") ?? null;
-
-    //return getBardicDie(actor);
+    return actor.getFlag(MODULE_ID, "inspirationDie") ?? "1d6";
 }
 
 async function consumeBardicInspirationCharge(bardActor) {
@@ -301,7 +301,6 @@ async function consumeBardicInspirationCharge(bardActor) {
     }
 
     await feature.update({ "system.uses.spent": uses.spent + 1 });
-    console.log(`${MODULE_ID} | Bardic Uses Left: ${feature.system?.uses.value}`);
     return true;
 }
 
@@ -344,7 +343,7 @@ function refreshOpenPartySheets(changedActor) {
     let partyMembers;
 
     if (method === "scene") {
-        partyMembers = getPartyMembers(changedActor);
+        partyMembers = [changedActor, ...getPartyMembers(changedActor)];
     } else {
         const folderId = changedActor?.folder?.id;
         if (!folderId) return;
@@ -371,19 +370,24 @@ function refreshAllOpenCharacterSheets() {
     }
 }
 
+async function refundBardicInspirationCharge(bardActor) {
+    const feature = bardActor.items.find(
+        i => i.type === "feat" && i.name.toLowerCase() === "bardic inspiration"
+    );
+    if (!feature) return;
+    const uses = feature.system?.uses;
+    if (!uses || uses.max === 0) return;
+    await feature.update({ "system.uses.spent": Math.max(0, uses.spent - 1) });
+}
+
 // ============================================================
 // SOCKET
 // ============================================================
 
-async function handleSocketEvent({action, payload}) {
-    // Only the GM executes actor updates on behalf of players
-    if (!game.user.isGM) return;
-
-    if (action === "giveInspiration") {
-        const targetActor = game.actors.get(payload.targetActorId);
-        const sourceActor = game.actors.get(payload.sourceActorId);
-        if (!targetActor || !sourceActor) return;
-        await giveInspiration(targetActor, sourceActor);
-        refreshOpenPartySheets(targetActor);
-    }
+async function handleGiveInspiration({ targetActorId, sourceActorId, formula }) {
+    const targetActor = game.actors.get(targetActorId);
+    const sourceActor = game.actors.get(sourceActorId);
+    if (!targetActor || !sourceActor) return;
+    await giveInspiration(targetActor, sourceActor, formula);
+    refreshOpenPartySheets(targetActor);
 }

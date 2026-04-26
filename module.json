@@ -2,7 +2,8 @@
     "id": "bardic-inspiration-tracker",
     "title": "Bardic Inspiration Tracker",
     "description": "Tracks Bardic Inspiration",
-    "version": "2.1.1",
+    "version": "2.1.4",
+    "socket": true,
     "authors": [
         {
             "name": "faustolazala",
@@ -15,6 +16,15 @@
         "verified": "13"
     },
     "relationships": {
+        "requires": [
+            {
+                "id": "socketlib",
+                "type": "module",
+                "compatibility": {
+                    "minimum": "1.0.0"
+                }
+            }
+        ],
         "systems": [
             {
                 "id": "dnd5e",
